@@ -16,6 +16,8 @@ Usage:
     python deepfashion2.py infer --weights coco --image 【图像路径】
     python deepfashion2.py infer --weights last --image 【图像路径】
     python deepfashion2.py infer --weights 【weights】 --image 【图像路径】
+
+    F:\MachineLearning-Datasets\DeepFashion2_Dataset\test\test\image\000001.jpg
 """
 
 
@@ -43,6 +45,7 @@ from pycocotools import mask as maskUtils
 import imgaug           # 若用到 数据增强 时，会用到这个库
 from skimage import io as skio
 from datetime import datetime
+import tensorflow as tf
 
 PRJ_ROOT_DIR = os.path.abspath("../")  # 工程根目录
 DEFAULT_LOGS_DIR = os.path.join(PRJ_ROOT_DIR, "MaskRCNN_DeepFashion2_logs")
@@ -52,12 +55,12 @@ COCO_WEIGHTS_PATH = os.path.join(PRJ_ROOT_DIR, "mask_rcnn_coco.h5")
 # 数据集中的训练集 图像 目录
 DATASET_TRAIN_IMG_DIR = r'F:\MachineLearning-Datasets\DeepFashion2_Dataset\train\image\image01\image01'
 # 数据集中的训练集 标注文件
-DATASET_TRAIN_ANNO_FILE = r'F:\MachineLearning-Datasets\DeepFashion2_API_cache\trainImagePart1_100.json'
+DATASET_TRAIN_ANNO_FILE = r'F:\MachineLearning-Datasets\DeepFashion2_API_cache\trainImagePart1_1000.json'
 
 # 数据集中的验证集 图像 目录
 DATASET_VAL_IMG_DIR = r'F:\MachineLearning-Datasets\DeepFashion2_Dataset\validation\validation\image'
 # 数据集中的验证集 标注文件
-DATASET_VAL_ANNO_FILE = r'F:\MachineLearning-Datasets\DeepFashion2_API_cache\valImage_100.json'
+DATASET_VAL_ANNO_FILE = r'F:\MachineLearning-Datasets\DeepFashion2_API_cache\valImage_1000.json'
 
 sys.path.append(PRJ_ROOT_DIR)
 from mrcnn.config import Config
@@ -68,6 +71,10 @@ CLASS_NAMES_EN = ['short sleeve top', 'long sleeve top', 'short sleeve outwear',
                   'long sleeve outwear', 'vest', 'sling', 'shorts', 'trousers',
                   'skirt', 'short sleeve dress', 'long sleeve dress', 'vest dress',
                   'sling dress']
+
+
+gpu_options = tf.GPUOptions(allow_growth=True)
+sess = tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
 
 ############################################################
 #  Training Configurations
@@ -99,6 +106,8 @@ class DeepFashion2Config(Config):
 
     # TODO:也许可以把这个改一下减小内存负载？
     # IMAGE_RESIZE_MODE = "square"
+    IMAGE_MAX_DIM = 640         # 默认值为 1024
+    IMAGE_MIN_DIM = 600         # 默认值为 800
 
     # USE_MINI_MASK = True      # 减小内存负载，默认值就是 True
 
@@ -298,7 +307,7 @@ def train_maskrcnn(model, config):
     print("Training network heads")
     model.train(dataset_train, dataset_val,
                 learning_rate=config.LEARNING_RATE,
-                epochs=40,
+                epochs=8,       # 原：40
                 layers='heads',
                 augmentation=augmentation)
 
@@ -307,7 +316,7 @@ def train_maskrcnn(model, config):
     print("Fine tune Resnet stage 4 and up")
     model.train(dataset_train, dataset_val,
                 learning_rate=config.LEARNING_RATE,
-                epochs=120,
+                epochs=10,     # 原：120
                 layers='4+',
                 augmentation=augmentation)
 
@@ -316,7 +325,7 @@ def train_maskrcnn(model, config):
     print("Fine tune all layers")
     model.train(dataset_train, dataset_val,
                 learning_rate=config.LEARNING_RATE / 10,
-                epochs=160,
+                epochs=12,     # 原：160
                 layers='all',
                 augmentation=augmentation)
 
@@ -403,7 +412,7 @@ if __name__ == "__main__":
             # one image at a time. Batch size = GPU_COUNT * IMAGES_PER_GPU
             GPU_COUNT = 1
             IMAGES_PER_GPU = 1
-            DETECTION_MIN_CONFIDENCE = 0.7
+            DETECTION_MIN_CONFIDENCE = 0.5
         config = InferenceConfig()
 
     config.display()
@@ -416,7 +425,7 @@ if __name__ == "__main__":
         model = MaskRCNN(mode="inference", config=config,
                          model_dir=args.logs)
     elif args.command == "evaluate":
-        # TODO: evaluate mode，可以参考 DeepFashion2 给出的代码
+        # TODO: evaluate mode，可以复用DeepFashion2官方给出的代码
         print(" evaluate 部分的代码还未编写")
         exit(0)
     else:
@@ -435,6 +444,8 @@ if __name__ == "__main__":
         weights_path = model.find_last()
     else:
         weights_path = args.weights
+
+    print("正在使用的 weights: ", weights_path)
 
     # Load weights
     print("Loading weights ", weights_path)

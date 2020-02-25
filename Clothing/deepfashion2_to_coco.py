@@ -14,18 +14,18 @@ import numpy as np
 
 
 # json文件所在根目录：
-# JSON_DIR = r'F:\MachineLearning-Datasets\DeepFashion2_Dataset\train\annos\annos'
 JSON_DIR = r'F:\MachineLearning-Datasets\DeepFashion2_Dataset\train\annos\annos'
+# JSON_DIR = r'F:\MachineLearning-Datasets\DeepFashion2_Dataset\validation\validation\annos'
 
 # 图像文件所在根目录：
-# IMAGE_DIR = r'F:\MachineLearning-Datasets\DeepFashion2_Dataset\train\image\image01\image01'
-IMAGE_DIR = r'F:\MachineLearning-Datasets\DeepFashion2_Dataset\validation\validation\image'
+IMAGE_DIR = r'F:\MachineLearning-Datasets\DeepFashion2_Dataset\train\image\image01\image01'
+# IMAGE_DIR = r'F:\MachineLearning-Datasets\DeepFashion2_Dataset\validation\validation\image'
 
 # 输出的单个json文件的路径及文件名：
-# OUTPUT_PATH_FILENAME = r'F:\MachineLearning-Datasets\DeepFashion2_API_cache\trainImagePart1_100.json'
-OUTPUT_PATH_FILENAME = r'F:\MachineLearning-Datasets\DeepFashion2_API_cache\valImage_100.json'
+OUTPUT_PATH_FILENAME = r'F:\MachineLearning-Datasets\DeepFashion2_API_cache\trainImagePart1_1000.json'
+# OUTPUT_PATH_FILENAME = r'F:\MachineLearning-Datasets\DeepFashion2_API_cache\valImage_1000.json'
 
-NUM_IMAGES = 100              # 图像总数量
+NUM_IMAGES = 1000              # 图像总数量
 
 
 ############################################################
