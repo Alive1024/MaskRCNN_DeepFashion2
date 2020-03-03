@@ -55,12 +55,12 @@ COCO_WEIGHTS_PATH = os.path.join(PRJ_ROOT_DIR, "mask_rcnn_coco.h5")
 # 数据集中的训练集 图像 目录
 DATASET_TRAIN_IMG_DIR = r'F:\MachineLearning-Datasets\DeepFashion2_Dataset\train\image\image01\image01'
 # 数据集中的训练集 标注文件
-DATASET_TRAIN_ANNO_FILE = r'F:\MachineLearning-Datasets\DeepFashion2_API_cache\trainImagePart1_1000.json'
+DATASET_TRAIN_ANNO_FILE = r'F:\MachineLearning-Datasets\DeepFashion2_API_cache\trainImagePart1_8000.json'
 
 # 数据集中的验证集 图像 目录
 DATASET_VAL_IMG_DIR = r'F:\MachineLearning-Datasets\DeepFashion2_Dataset\validation\validation\image'
 # 数据集中的验证集 标注文件
-DATASET_VAL_ANNO_FILE = r'F:\MachineLearning-Datasets\DeepFashion2_API_cache\valImage_1000.json'
+DATASET_VAL_ANNO_FILE = r'F:\MachineLearning-Datasets\DeepFashion2_API_cache\valImage_8000.json'
 
 sys.path.append(PRJ_ROOT_DIR)
 from mrcnn.config import Config
@@ -307,17 +307,18 @@ def train_maskrcnn(model, config):
     print("Training network heads")
     model.train(dataset_train, dataset_val,
                 learning_rate=config.LEARNING_RATE,
-                epochs=8,       # 原：40
+                epochs=20,       # 原：40
                 layers='heads',
                 augmentation=augmentation)
 
     # Training - Stage 2
-    # Finetune layers from ResNet stage 4 and up
+    # Finetune layers from ResNet stage 4, 5 and BN 4,5
     print("Fine tune Resnet stage 4 and up")
     model.train(dataset_train, dataset_val,
                 learning_rate=config.LEARNING_RATE,
-                epochs=10,     # 原：120
-                layers='4+',
+                epochs=40,     # 原：120
+                # layers='4+',
+                layers=r"(res4.*)|(bn4.*)|(res5.*)|(bn5.*)",
                 augmentation=augmentation)
 
     # Training - Stage 3
@@ -325,7 +326,7 @@ def train_maskrcnn(model, config):
     print("Fine tune all layers")
     model.train(dataset_train, dataset_val,
                 learning_rate=config.LEARNING_RATE / 10,
-                epochs=12,     # 原：160
+                epochs=80,     # 原：160
                 layers='all',
                 augmentation=augmentation)
 
