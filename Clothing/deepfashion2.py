@@ -41,11 +41,13 @@ import sys
 import os
 import numpy as np
 from pycocotools.coco import COCO
+from pycocotools.cocoeval import COCOeval
 from pycocotools import mask as maskUtils
 import imgaug           # 若用到 数据增强 时，会用到这个库
 from skimage import io as skio
 from datetime import datetime
 import tensorflow as tf
+import json
 
 PRJ_ROOT_DIR = os.path.abspath("../")  # 工程根目录
 DEFAULT_LOGS_DIR = os.path.join(PRJ_ROOT_DIR, "MaskRCNN_DeepFashion2_logs")
@@ -55,7 +57,7 @@ COCO_WEIGHTS_PATH = os.path.join(PRJ_ROOT_DIR, "mask_rcnn_coco.h5")
 # 数据集中的训练集 图像 目录
 DATASET_TRAIN_IMG_DIR = r'F:\MachineLearning-Datasets\DeepFashion2_Dataset\train\image\image01\image01'
 # 数据集中的训练集 标注文件
-DATASET_TRAIN_ANNO_FILE = r'F:\MachineLearning-Datasets\DeepFashion2_API_cache\trainImagePart1_8000.json'
+DATASET_TRAIN_ANNO_FILE = r'F:\MachineLearning-Datasets\DeepFashion2_API_cache\trainImagePart1_8001_30000.json'
 
 # 数据集中的验证集 图像 目录
 DATASET_VAL_IMG_DIR = r'F:\MachineLearning-Datasets\DeepFashion2_Dataset\validation\validation\image'
@@ -67,7 +69,7 @@ from mrcnn.config import Config
 from mrcnn.model import MaskRCNN
 from mrcnn import utils, visualize
 
-CLASS_NAMES_EN = ['short sleeve top', 'long sleeve top', 'short sleeve outwear',
+CLASS_NAMES_EN = ['BG', 'short sleeve top', 'long sleeve top', 'short sleeve outwear',
                   'long sleeve outwear', 'vest', 'sling', 'shorts', 'trousers',
                   'skirt', 'short sleeve dress', 'long sleeve dress', 'vest dress',
                   'sling dress']
@@ -98,11 +100,10 @@ class DeepFashion2Config(Config):
     # Number of classes (including background)
     NUM_CLASSES = 1 + 13
 
-    # TODO:考虑换成 resnet50?
     # BACKBONE = 'resnet101'
 
-    # 以下值在这里并不需要与训练集的大小匹配。 它的大小只是用来控制保存checkpoints的频率
-    # STEPS_PER_EPOCH = 1000
+    # "这个值在这里并不需要与训练集的大小匹配"
+    # STEPS_PER_EPOCH = 2000      # 默认值为1000
 
     # TODO:也许可以把这个改一下减小内存负载？
     # IMAGE_RESIZE_MODE = "square"
@@ -114,6 +115,14 @@ class DeepFashion2Config(Config):
     # DETECTION_MIN_CONFIDENCE = 0.7
 
     # LEARNING_RATE = 0.001
+
+    LOSS_WEIGHTS = {
+        "rpn_class_loss": 1.,
+        "rpn_bbox_loss": 1.,
+        "mrcnn_class_loss": 1.,
+        "mrcnn_bbox_loss": 1.,
+        "mrcnn_mask_loss": 5.
+    }
 
 
 ############################################################
@@ -278,25 +287,13 @@ class DeepFashion2Dataset(utils.Dataset):
 
 
 def train_maskrcnn(model, config):
-
     dataset_train = DeepFashion2Dataset()
     dataset_train.load_coco(DATASET_TRAIN_IMG_DIR, DATASET_TRAIN_ANNO_FILE)
     dataset_train.prepare()
 
-    ''''''
     dataset_val = DeepFashion2Dataset()
     dataset_val.load_coco(DATASET_VAL_IMG_DIR, DATASET_VAL_ANNO_FILE)
-    # TODO：注意这里临时使用了
-    # dataset_val.load_coco(DATASET_TRAIN_IMG_DIR, DATASET_TRAIN_ANNO_FILE)
     dataset_val.prepare()
-
-    """
-    # 只训练 heads 的简化版训练：
-    model.train(dataset_train, dataset_val,
-                learning_rate=config.LEARNING_RATE,
-                epochs=30,
-                layers='heads')
-    """
 
     """"""
     # 带数据增强的分阶段训练:
@@ -313,23 +310,23 @@ def train_maskrcnn(model, config):
 
     # Training - Stage 2
     # Finetune layers from ResNet stage 4, 5 and BN 4,5
-    print("Fine tune Resnet stage 4 and up")
+    # print("Fine tune Resnet stage 4 and up")
     model.train(dataset_train, dataset_val,
                 learning_rate=config.LEARNING_RATE,
                 epochs=40,     # 原：120
                 # layers='4+',
-                layers=r"(res4.*)|(bn4.*)|(res5.*)|(bn5.*)",
+                # layers=r"(res4.*)|(bn4.*)|(res5.*)|(bn5.*)",
+                layers=r"(fpn\_.*)",
                 augmentation=augmentation)
 
     # Training - Stage 3
-    # Fine tune all layers
-    print("Fine tune all layers")
+    print("Fine tune ResNet/BN Stage 4&5")
     model.train(dataset_train, dataset_val,
-                learning_rate=config.LEARNING_RATE / 10,
+                learning_rate=config.LEARNING_RATE,
                 epochs=80,     # 原：160
-                layers='all',
+                # layers=r"(res4.*)|(bn4.*)|(res5.*)|(bn5.*)",
+                layers=r"(res1.*)|(res2.*)|(res3.*)",
                 augmentation=augmentation)
-
 
 
 def infer_image(model):
@@ -345,17 +342,95 @@ def infer_image(model):
         masks: [H, W, N] instance binary masks
     '''
 
-    '''
-    visualize.display_instances(image=image, boxes=r['rois'], masks=r['masks'],
-                                class_ids=r['class_ids'], class_names=CLASS_NAMES_EN)
+    for i in range(len(r['class_ids'])):
+        print(CLASS_NAMES_EN[r['class_ids'][i]], r['scores'][i])
 
-    '''
     visualize.display_instances(image=image, boxes=r['rois'], masks=r['masks'],
                                 class_ids=r['class_ids'], class_names=CLASS_NAMES_EN,
                                 scores=r['scores'])
 
-    for i in r['class_ids']:
-        print(i, CLASS_NAMES_EN[i])
+
+def evaluate(model):
+    # 确定评估类型---------------------------
+    annaType = ['segm', 'bbox', 'keypoints']
+    print("选择评估类型：")
+    while True:
+        print('1.segmentation\n2.bounding box\n3.keypoints\n')
+        choice = input()
+        if choice == '1' or choice == '2' or choice == '3':
+            annaType = annaType[int(choice)-1]
+            break
+        else:
+            print('输入无效，请重新选择')
+
+    print('正在进行 %s 类型的评估' % annaType)
+
+    # 获取文件信息---------------------------
+    print('输入图像目录：')
+    imgDir = input()
+    if imgDir[0] == '"' or imgDir[0] == '“':
+        imgDir = imgDir[1:len(imgDir)-1]
+    print('输入GT标准文件路径：')
+    gtAnnFile = input()
+    if gtAnnFile[0] == '"' or gtAnnFile[0] == '“':
+        gtAnnFile = gtAnnFile[1:len(gtAnnFile)-1]
+
+    # 处理GT --------------------------------
+    cocoGT = COCO(gtAnnFile)
+
+    # 选出评估所使用的图片---------------------------------------------------
+    print('选取评估所使用的图像。输入有效的一首一尾两个图像编号 (左闭右开区间,占位的0不用输入)：')
+    startIndex = int(input())
+    endIndex = int(input())
+
+    imgIds = sorted(cocoGT.getImgIds())
+    imgIds = imgIds[startIndex-1:endIndex-1]
+
+    # 运行模型获取预测结果------------------------------------
+    results = []
+    for imgId in imgIds:
+        img = skio.imread(imgDir + '\\' + str(imgId).zfill(6) + '.jpg')
+        curImg = model.detect([img])[0]    # curImg 对应当前衣物，是一个dict
+
+        for index in range(len(curImg['class_ids'])):
+            singleItem = {'image_id': imgId}      # 对应一张图像中的一件衣物
+
+            if annaType == 'segm':
+                pass
+            elif annaType == 'bbox':
+                bbox = curImg['rois'][index]
+                singleItem['bbox'] = [bbox[1], bbox[0], bbox[3]-bbox[1], bbox[2]-bbox[0]]
+            else:
+                pass    # TODO keypoints
+
+            singleItem['category_id'] = curImg['class_ids'][index]
+            singleItem['score'] = curImg['scores'][index]
+
+            results.append(singleItem)
+
+    # 输出一个json文件以检查格式是否正确------------------------------------
+    # class MyEncoder(json.JSONEncoder):
+    #     def default(self, obj):
+    #         if isinstance(obj, np.integer):
+    #             return int(obj)
+    #         elif isinstance(obj, np.floating):
+    #             return float(obj)
+    #         elif isinstance(obj, np.ndarray):
+    #             return obj.tolist()
+    #         else:
+    #             return super(MyEncoder, self).default(obj)
+    # with open('test.json', 'w') as f:
+    #     json.dump(results, f, cls=MyEncoder)
+
+    # 处理 预测结果 ---------------------------------------------------
+    cocoDT = cocoGT.loadRes(results)
+
+    # 进行评估：
+    cocoEval = COCOeval(cocoGT, cocoDT, annaType)
+    cocoEval.params.imgIds = imgIds
+    cocoEval.evaluate()
+    cocoEval.accumulate()
+    cocoEval.summarize()
 
 
 if __name__ == "__main__":
@@ -364,7 +439,7 @@ if __name__ == "__main__":
 
     # Parse command line arguments
     parser = argparse.ArgumentParser(
-        description='Match R-CNN for DeepFashion2.')
+        description='Mask R-CNN for DeepFashion2.')
     parser.add_argument("command",
                         metavar="<command>",
                         help="'train' or 'infer' or 'evaluate'")
@@ -413,7 +488,7 @@ if __name__ == "__main__":
             # one image at a time. Batch size = GPU_COUNT * IMAGES_PER_GPU
             GPU_COUNT = 1
             IMAGES_PER_GPU = 1
-            DETECTION_MIN_CONFIDENCE = 0.5
+            DETECTION_MIN_CONFIDENCE = 0.7
         config = InferenceConfig()
 
     config.display()
@@ -422,13 +497,9 @@ if __name__ == "__main__":
     if args.command == "train":
         model = MaskRCNN(mode="training", config=config,
                          model_dir=args.logs)
-    elif args.command == "infer":
+    elif args.command == "infer" or args.command == "evaluate":
         model = MaskRCNN(mode="inference", config=config,
                          model_dir=args.logs)
-    elif args.command == "evaluate":
-        # TODO: evaluate mode，可以复用DeepFashion2官方给出的代码
-        print(" evaluate 部分的代码还未编写")
-        exit(0)
     else:
         print("'{}' is not recognized. "
               "Use 'train' or 'infer' or 'evaluate'".format(args.command))
@@ -465,5 +536,5 @@ if __name__ == "__main__":
     elif args.command == "infer":
         infer_image(model)
     elif args.command == "evaluate":
-        pass
+        evaluate(model)
 

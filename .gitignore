@@ -1,0 +1,12 @@
+.idea
+Clothing/.ipynb_checkpoints
+*/__pycache__
+*.json
+MaskRCNN_DeepFashion2_logs
+draft.py
+external_weights
+images
+*.h5
+samples
+*.jpg
+*xmind
